@@ -11,7 +11,7 @@ import yt_dlp
 from core.ffmpeg_setup import ensure_ffmpeg
 from native.native_bridge import clean_youtube_title, verify_audio_format, sanitize_filename, probe_audio_file
 
-ANSI_ESCAPE_PATTERN = re.compile(r'(?:\x1b|\u001b|\[\]|\?\?)*\[[0-9;]*[a-zA-Z]')
+ANSI_ESCAPE_PATTERN = re.compile(r'(?:\x1b\[|\u001b\[|\[\]\[)[0-9;]*[a-zA-Z]')
 
 def clean_ansi_text(text: str) -> str:
     """Removes ANSI terminal color escape codes and formats clean error messages."""
