@@ -1,0 +1,5 @@
+yt-dlp>=2025.0.0
+PyQt6>=6.6.0
+static-ffmpeg>=3.0
+pillow>=10.0.0
+pyinstaller>=6.0.0

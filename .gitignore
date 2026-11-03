@@ -1,0 +1,52 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller / Build Artifacts
+build/
+dist/
+*.spec
+*.manifest
+
+# Packaged Large Executables
+YouXtractor.exe
+YouTube_to_MP3_Converter.exe
+
+# Local Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Output & Downloads
+downloads/
+*.mp3
+*.m4a
+*.opus
+*.flac
+*.wav
+*.webm
+
+# Temporary Spectrograms & Cache
+youxtractor_cache/
+yt_to_mp3_cache/
+*_spectrogram.png
+
+# Keep application assets
+!assets/*.png
+!assets/*.ico
+
+# OS Generated
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# IDE / Editor Settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

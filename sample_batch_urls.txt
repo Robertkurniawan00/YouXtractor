@@ -1,0 +1,11 @@
+# ====================================================================
+# YouXtractor - Sample Batch Download URL List
+# ====================================================================
+# Enter one YouTube video or playlist URL per line.
+# Lines beginning with '#' will be ignored as comments.
+# Empty lines are skipped automatically.
+
+# Example video URL:
+https://www.youtube.com/watch?v=jNQXAC9IVRw
+
+# Paste as many links as you want below:
