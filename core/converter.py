@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import json
+import time
 import shutil
 import subprocess
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
@@ -291,7 +292,19 @@ class YouTubeAudioConverter:
             opts["ffmpeg_location"] = self.ffmpeg_dir
 
         if browser_cookies and browser_cookies.lower() not in ("none", "", "tidak ada"):
-            opts["cookiesfrombrowser"] = (browser_cookies.lower(),)
+            if os.path.isfile(browser_cookies):
+                opts["cookiefile"] = os.path.abspath(browser_cookies)
+            else:
+                opts["cookiesfrombrowser"] = (browser_cookies.lower(),)
+        else:
+            # Auto-detect local cookies.txt in workspace root or current directory
+            for candidate in [
+                os.path.join(os.getcwd(), "cookies.txt"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cookies.txt")
+            ]:
+                if os.path.isfile(candidate):
+                    opts["cookiefile"] = os.path.abspath(candidate)
+                    break
 
         return opts
 
@@ -324,10 +337,14 @@ class YouTubeAudioConverter:
         is_playlist = ("_type" in info and info["_type"] == "playlist") and not (force_single and is_compound)
         
         if is_playlist:
-            entries = info.get("entries", [])
+            raw_entries = info.get("entries") or []
+            try:
+                entries = list(raw_entries)
+            except Exception:
+                entries = []
             playlist_title = info.get("title", "YouTube Playlist")
-            item_count = len(list(entries)) if entries else 0
-            first_entry = entries[0] if entries and len(entries) > 0 else {}
+            item_count = len(entries)
+            first_entry = entries[0] if entries and len(entries) > 0 and isinstance(entries[0], dict) else {}
             
             return {
                 "success": True,
@@ -556,20 +573,44 @@ class YouTubeAudioConverter:
             # Smart Title Cleaning & Custom Tag Injection
             tagged_files = []
             ffmpeg_bin = self.ffmpeg_info.get("ffmpeg") or "ffmpeg"
+            is_playlist = bool(info and (info.get("_type") == "playlist" or "entries" in info))
+            playlist_name = info.get("title", "Playlist") if is_playlist else "Single"
+
+            # Create entry lookup mapping by clean title or filename base
+            entry_map = {}
+            if is_playlist and info and "entries" in info:
+                for ent in info["entries"]:
+                    if ent and isinstance(ent, dict):
+                        e_title = ent.get("title")
+                        if e_title:
+                            clean_base = sanitize_filename(e_title).lower()
+                            entry_map[clean_base] = ent
 
             for fpath in final_files:
                 target_tags = {}
-                if custom_tags and (custom_tags.get("title") or custom_tags.get("artist")):
+                base_name = os.path.splitext(os.path.basename(fpath))[0]
+                if custom_tags and not is_playlist and (custom_tags.get("title") or custom_tags.get("artist")):
                     target_tags = custom_tags
                 elif auto_clean_tags and preset["is_reencode"]:
-                    v_title = info.get("title", "") if info else os.path.splitext(os.path.basename(fpath))[0]
-                    v_artist = info.get("uploader", "") if info else ""
-                    c_art, c_tit = clean_youtube_title(v_title, v_artist)
-                    target_tags = {
-                        "artist": c_art,
-                        "title": c_tit,
-                        "album": "Single"
-                    }
+                    if is_playlist:
+                        matched_ent = entry_map.get(base_name.lower())
+                        v_title = matched_ent.get("title", base_name) if matched_ent else base_name
+                        v_artist = matched_ent.get("uploader", "") if matched_ent else ""
+                        c_art, c_tit = clean_youtube_title(v_title, v_artist)
+                        target_tags = {
+                            "artist": c_art,
+                            "title": c_tit,
+                            "album": playlist_name
+                        }
+                    else:
+                        v_title = info.get("title", "") if info else base_name
+                        v_artist = info.get("uploader", "") if info else ""
+                        c_art, c_tit = clean_youtube_title(v_title, v_artist)
+                        target_tags = {
+                            "artist": c_art,
+                            "title": c_tit,
+                            "album": "Single"
+                        }
 
                 if target_tags:
                     log(f"Embedding clean ID3 tags: {target_tags.get('artist')} - {target_tags.get('title')}")
@@ -650,6 +691,9 @@ class YouTubeAudioConverter:
                 if log_callback:
                     log_callback("Batch download cancelled by user.")
                 break
+
+            if idx > 0:
+                time.sleep(1.2)  # Cooldown between requests to minimize YouTube bot flags
 
             current_num = idx + 1
             if overall_callback:

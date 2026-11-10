@@ -73,9 +73,9 @@ def main():
     )
     parser.add_argument(
         "--cookies",
-        choices=["chrome", "edge", "firefox", "brave"],
+        type=str,
         default=None,
-        help="Import browser cookies for age-restricted or rate-limited videos"
+        help="Import browser cookies (chrome, edge, firefox, brave) or path to cookies.txt file"
     )
     parser.add_argument(
         "--normalize",

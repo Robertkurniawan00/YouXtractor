@@ -136,6 +136,13 @@ class MainWindow(QMainWindow):
         self.download_worker = None
         self.batch_worker = None
         self.batch_urls = []
+        self.custom_cookie_path = None
+
+        # Auto-detect cookies.txt in workspace root
+        ws_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        auto_cookie = os.path.join(ws_root, "cookies.txt")
+        if os.path.isfile(auto_cookie):
+            self.custom_cookie_path = auto_cookie
 
         self.setStyleSheet(STYLESHEET)
         self.init_ui()
@@ -420,13 +427,29 @@ class MainWindow(QMainWindow):
 
         cookies_col = QVBoxLayout()
         cookies_col.setSpacing(3)
-        lbl_cookie = QLabel("BROWSER COOKIES")
+        lbl_cookie = QLabel("BROWSER COOKIES / AUTH")
         lbl_cookie.setObjectName("SectionHeader")
+        lbl_cookie.setToolTip("Select browser or load cookies.txt to bypass YouTube bot blocks & age restrictions")
         cookies_col.addWidget(lbl_cookie)
 
+        cookie_row = QHBoxLayout()
+        cookie_row.setSpacing(6)
         self.combo_browser = QComboBox()
         self.combo_browser.addItems(["None", "Chrome", "Edge", "Firefox", "Brave"])
-        cookies_col.addWidget(self.combo_browser)
+        cookie_row.addWidget(self.combo_browser, stretch=1)
+
+        self.btn_cookie_file = QPushButton("File...")
+        self.btn_cookie_file.setObjectName("GhostButton")
+        self.btn_cookie_file.setToolTip("Select cookies.txt file to bypass YouTube bot detection")
+        self.btn_cookie_file.clicked.connect(self._browse_cookie_file)
+        cookie_row.addWidget(self.btn_cookie_file)
+
+        if self.custom_cookie_path:
+            fname = os.path.basename(self.custom_cookie_path)
+            self.combo_browser.addItem(f"File: {fname} (Auto)")
+            self.combo_browser.setCurrentIndex(self.combo_browser.count() - 1)
+
+        cookies_col.addLayout(cookie_row)
         opt_row.addLayout(cookies_col, stretch=1)
 
         settings_box.addLayout(opt_row)
@@ -558,6 +581,11 @@ class MainWindow(QMainWindow):
             self._auto_inspect_timer.start(400)
 
     def _on_compound_mode_changed(self):
+        # Ignore uncheck events triggered by QButtonGroup switching
+        sender = self.sender()
+        if sender and hasattr(sender, "isChecked") and not sender.isChecked():
+            return
+
         url = self.txt_url.text().strip()
         if url and is_compound_url(url):
             self.check_url_info()
@@ -654,17 +682,48 @@ class MainWindow(QMainWindow):
         self.log_console.setVisible(is_visible)
         self.btn_toggle_log.setText("Hide Technical Log ▴" if is_visible else "Diagnostics & Technical Log ▾")
 
+    def _browse_cookie_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select cookies.txt File",
+            "",
+            "Cookie/Text files (*.txt *.cookies);;All files (*.*)"
+        )
+        if path and os.path.isfile(path):
+            self.custom_cookie_path = path
+            fname = os.path.basename(path)
+            item_text = f"File: {fname}"
+            idx = self.combo_browser.findText(item_text)
+            if idx == -1:
+                self.combo_browser.addItem(item_text)
+                idx = self.combo_browser.count() - 1
+            self.combo_browser.setCurrentIndex(idx)
+            self.append_log(f"Loaded custom cookies file: {path}")
+
     def _get_selected_cookies(self):
-        text = self.combo_browser.currentText().lower()
-        if "chrome" in text:
+        text = self.combo_browser.currentText()
+        if text.startswith("File:") and self.custom_cookie_path and os.path.isfile(self.custom_cookie_path):
+            return self.custom_cookie_path
+        text_lower = text.lower()
+        if "chrome" in text_lower:
             return "chrome"
-        elif "edge" in text:
+        elif "edge" in text_lower:
             return "edge"
-        elif "firefox" in text:
+        elif "firefox" in text_lower:
             return "firefox"
-        elif "brave" in text:
+        elif "brave" in text_lower:
             return "brave"
         return None
+
+    def _get_bot_hint(self, err_text: str) -> str:
+        if "confirm you’re not a bot" in err_text.lower() or "confirm you're not a bot" in err_text.lower():
+            return (
+                "\n\n💡 [SOLUSI BOT DETECTION YOUTUBE]:\n"
+                "YouTube mendeteksi aktivitas download otomatis. Cara mengatasi:\n"
+                "1. Pada opsi 'BROWSER COOKIES / AUTH', pilih browser Anda (Edge, Firefox, Brave, Chrome).\n"
+                "2. Atau klik tombol 'File...' dan pilih file 'cookies.txt' yang diekspor dari browser Anda."
+            )
+        return ""
 
     def append_log(self, text: str):
         cleaned_text = clean_ansi_text(text)
@@ -689,6 +748,16 @@ class MainWindow(QMainWindow):
         self.btn_inspect.setText("...")
         mode_str = "Single Track" if (is_comp and force_single) else ("Playlist" if (is_comp or "playlist" in url) else "Single Track")
         self.append_log(f"Inspecting stream ({mode_str}): {url}")
+
+        # Safely shut down any previous inspection worker to avoid QThread abort
+        if hasattr(self, "info_worker") and self.info_worker and self.info_worker.isRunning():
+            try:
+                self.info_worker.finished.disconnect()
+                self.info_worker.error.disconnect()
+            except Exception:
+                pass
+            self.info_worker.quit()
+            self.info_worker.wait(400)
 
         cookies = self._get_selected_cookies()
         self.info_worker = FetchInfoWorker(self.converter, url, cookies, force_single=force_single)
@@ -717,7 +786,8 @@ class MainWindow(QMainWindow):
         self.btn_inspect.setText("Inspect")
         clean_err = clean_ansi_text(err)
         self.append_log(f"Inspection error: {clean_err}")
-        QMessageBox.critical(self, "Stream Error", f"Unable to parse stream information:\n\n{clean_err}")
+        hint = self._get_bot_hint(clean_err)
+        QMessageBox.critical(self, "Stream Error", f"Unable to parse stream information:\n\n{clean_err}{hint}")
 
     def start_download(self):
         out_dir = self.txt_dest.text().strip()
@@ -836,7 +906,8 @@ class MainWindow(QMainWindow):
             err = clean_ansi_text(raw_err)
             self.lbl_progress_status.setText("Download Failed")
             self.lbl_progress_details.setText(err)
-            QMessageBox.critical(self, "Download Error", f"Download failed:\n\n{err}")
+            hint = self._get_bot_hint(err)
+            QMessageBox.critical(self, "Download Error", f"Download failed:\n\n{err}{hint}")
 
     # Batch Handlers
     def _on_batch_item_progress(self, idx: int, data: dict):
@@ -915,3 +986,13 @@ class MainWindow(QMainWindow):
             if child.widget():
                 child.widget().deleteLater()
         self.history_frame.setVisible(False)
+
+    def closeEvent(self, event):
+        for worker in (getattr(self, "info_worker", None), getattr(self, "download_worker", None), getattr(self, "batch_worker", None)):
+            if worker and worker.isRunning():
+                try:
+                    worker.quit()
+                    worker.wait(400)
+                except Exception:
+                    pass
+        super().closeEvent(event)

@@ -51,11 +51,14 @@ class RoundedThumbnailLabel(QLabel):
 
 
 class VideoPreviewCard(QFrame):
+    thumbnail_loaded = pyqtSignal(QPixmap)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("InnerSurface")
         self.setVisible(False)
         self.init_ui()
+        self.thumbnail_loaded.connect(self.thumb_label.set_image)
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -144,7 +147,7 @@ class VideoPreviewCard(QFrame):
                     image = QImage()
                     if image.loadFromData(raw_data):
                         pixmap = QPixmap.fromImage(image)
-                        self.thumb_label.set_image(pixmap)
+                        self.thumbnail_loaded.emit(pixmap)
             except Exception:
                 pass
         Thread(target=_fetch, daemon=True).start()
